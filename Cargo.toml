@@ -23,6 +23,7 @@ color-rs = "0.8.0"
 colorgrad = "0.6.2"
 map-range = "0.1.2"
 clap = { version = "4.5.0", features = ["derive"] }
+tempfile = "3.10.1"
 
 [dependencies.stardust-xr-fusion]
 git = "https://github.com/StardustXR/core.git"
