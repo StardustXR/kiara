@@ -32,8 +32,10 @@ async fn main() -> Result<()> {
 	for (key, value) in env {
 		set_var(key, value);
 	}
+	let niri_config_path =
+		option_env!("NIRI_CONFIG").unwrap_or(file_relative_path!("src/niri_config.kdl"));
 	let mut niri_open = Command::new("niri")
-		.args(&["-c", file_relative_path!("src/niri_config.kdl"), "--"])
+		.args(&["-c", niri_config_path, "--"])
 		.args(&args.niri_launch)
 		.spawn()?;
 
