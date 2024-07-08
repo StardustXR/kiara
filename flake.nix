@@ -14,21 +14,11 @@
       nixpkgsFor = forAllSystems (system: import nixpkgs { inherit system; });
   in {
     packages = forAllSystems (system: let pkgs = nixpkgsFor.${system}; in {
-      default = crane.lib.${system}.buildPackage {
+      default = crane.lib.${system}.buildPackage rec {
         src = ./.;
         
-        NIRI_CONFIG = pkgs.stdenvNoCC.mkDerivation {
-          name = "niri_config";
-          src = ./.;
-  
-          buildPhase = "cp -r $src/niri_config.kdl $out";
-        } + "niri_config.kdl";
-        STARDUST_RES_PREFIXES = pkgs.stdenvNoCC.mkDerivation {
-          name = "resources";
-          src = ./.;
-  
-          buildPhase = "cp -r $src/res $out";
-        };
+        NIRI_CONFIG = "${src}/src/niri_config.kdl";
+        STARDUST_RES_PREFIXES = "${src}/res";
       };
     });
 
