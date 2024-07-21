@@ -1,55 +1,63 @@
-use std::sync::OnceLock;
-
 use crate::ring::Ring;
 use stardust_xr_fusion::{
-	client::{ClientState, FrameInfo, RootHandler},
+	fields::Field,
 	items::{
-		panel::{PanelItem, PanelItemInitData},
-		ItemUIHandler,
+		panel::{
+			PanelItem, PanelItemAcceptor, PanelItemAcceptorHandler, PanelItemInitData,
+			PanelItemUiHandler,
+		},
+		ItemAcceptorHandler, ItemUiHandler,
 	},
+	node::NodeType,
+	root::{ClientState, FrameInfo, RootHandler},
 };
+use std::sync::OnceLock;
 
+#[derive(Default)]
 pub struct Kiara {
-	ring: OnceLock<(String, Ring)>,
+	ring: OnceLock<(u64, Ring)>,
 }
 impl Kiara {
-	pub fn new() -> Self {
-		Kiara {
-			ring: OnceLock::new(),
-		}
-	}
-
-	fn add_item(&mut self, uid: String, item: PanelItem, _init_data: PanelItemInitData) {
+	fn add_item(&mut self, uid: u64, item: PanelItem, _init_data: PanelItemInitData) {
 		// dbg!(init_data);
 		self.ring.get_or_init(|| {
 			let ring = Ring::new(item);
 			(uid, ring)
 		});
 	}
-	fn remove_item(&mut self, uid: &str) {
+	fn remove_item(&mut self, uid: u64) {
 		if let Some((this_uid, _)) = self.ring.get() {
-			if this_uid == uid {
+			if *this_uid == uid {
 				self.ring.take();
 			}
 		}
 	}
 }
-impl ItemUIHandler<PanelItem> for Kiara {
-	fn item_created(&mut self, uid: String, item: PanelItem, init_data: PanelItemInitData) {
-		self.add_item(uid, item, init_data);
+impl PanelItemUiHandler for Kiara {
+	fn create_item(&mut self, item: PanelItem, init_data: PanelItemInitData) {
+		self.add_item(item.node().get_id().unwrap(), item, init_data);
 	}
-	fn item_destroyed(&mut self, uid: String) {
-		self.remove_item(&uid);
+	fn create_acceptor(&mut self, _acceptor: PanelItemAcceptor, _acceptor_field: Field) {}
+}
+impl ItemUiHandler for Kiara {
+	fn capture_item(&mut self, _item_id: u64, _acceptor_id: u64) {}
+	fn release_item(&mut self, _item_id: u64, _acceptor_id: u64) {}
+
+	fn destroy_item(&mut self, uid: u64) {
+		self.remove_item(uid);
+	}
+	fn destroy_acceptor(&mut self, _uid: u64) {}
+}
+impl PanelItemAcceptorHandler for Kiara {
+	fn capture_item(&mut self, item: PanelItem, initial_data: PanelItemInitData) {
+		self.add_item(item.node().get_id().unwrap(), item, initial_data);
 	}
 }
-// impl ItemAcceptorHandler<PanelItem> for Flatland {
-// 	fn captured(&mut self, uid: String, item: PanelItem, init_data: PanelItemInitData) {
-// 		self.add_item(uid, item, init_data);
-// 	}
-// 	fn released(&mut self, uid: String) {
-// 		self.remove_item(uid);
-// 	}
-// }
+impl ItemAcceptorHandler for Kiara {
+	fn release_item(&mut self, uid: u64) {
+		self.remove_item(uid);
+	}
+}
 impl RootHandler for Kiara {
 	fn frame(&mut self, _info: FrameInfo) {
 		if let Some((_, ring)) = self.ring.get_mut() {
@@ -57,7 +65,7 @@ impl RootHandler for Kiara {
 		}
 	}
 
-	fn save_state(&mut self) -> ClientState {
-		ClientState::default()
+	fn save_state(&mut self) -> color_eyre::eyre::Result<ClientState> {
+		Ok(ClientState::default())
 	}
 }

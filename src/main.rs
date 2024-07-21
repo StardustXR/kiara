@@ -5,7 +5,12 @@ use crate::kiara::Kiara;
 use clap::Parser;
 use color_eyre::eyre::{bail, Result};
 use manifest_dir_macros::{directory_relative_path, file_relative_path};
-use stardust_xr_fusion::{client::Client, items::ItemUI};
+use stardust_xr_fusion::{
+	client::Client,
+	items::panel::{PanelItemUi, PanelItemUiAspect},
+	node::NodeType,
+	root::RootAspect,
+};
 use std::env::set_var;
 use tokio::process::Command;
 use tracing_subscriber::EnvFilter;
@@ -24,18 +29,18 @@ async fn main() -> Result<()> {
 		.init();
 	let args = Cli::parse();
 	let (client, event_loop) = Client::connect_with_async_loop().await?;
-	client.set_base_prefixes(&[directory_relative_path!("res")]);
+	client.set_base_prefixes(&[directory_relative_path!("res")])?;
 
-	let kiara = client.wrap_root(Kiara::new())?;
-	let _item_ui_wrapped = ItemUI::register(&client)?.wrap_raw(kiara)?;
-	let env = client.get_connection_environment()?.await?;
+	let kiara = client.get_root().alias().wrap(Kiara::default())?;
+	let _item_ui_wrapped = PanelItemUi::register(&client)?.wrap_raw(kiara.wrapped().clone())?;
+	let env = client.get_root().get_connection_environment().await?;
 	for (key, value) in env {
 		set_var(key, value);
 	}
 	let niri_config_path =
 		option_env!("NIRI_CONFIG").unwrap_or(file_relative_path!("src/niri_config.kdl"));
 	let mut niri_open = Command::new("niri")
-		.args(&["-c", niri_config_path, "--"])
+		.args(["-c", niri_config_path, "--"])
 		.args(&args.niri_launch)
 		.spawn()?;
 

@@ -1,25 +1,22 @@
-use std::f32::consts::PI;
-
-use color::rgba_linear;
-use glam::{vec2, Vec2, Vec3, Vec3Swizzles};
+use glam::{vec2, Mat4, Vec2, Vec3, Vec3Swizzles};
 use map_range::MapRange;
 use mint::Vector2;
 use stardust_xr_fusion::{
 	core::values::ResourceID,
-	drawable::{Line, Lines, Model},
-	fields::CylinderField,
+	drawable::{Lines, Model},
+	fields::{CylinderShape, Field, Shape},
 	input::{InputDataType, InputHandler, Pointer},
-	items::panel::{PanelItem, SurfaceID},
+	items::panel::{PanelItem, PanelItemAspect, SurfaceId},
 	node::NodeType,
 	spatial::Transform,
-	HandlerWrapper,
 };
 use stardust_xr_molecules::{
 	data::SimplePulseReceiver,
-	input_action::{BaseInputAction, InputActionHandler, SingleActorAction},
+	input_action::{InputQueue, InputQueueable, SimpleAction},
 	keyboard::KeyboardEvent,
-	lines::{circle, make_line_points},
+	lines::{circle, LineExt},
 };
+use std::f32::consts::{FRAC_PI_2, PI};
 
 const ANGLE: f32 = 360.0;
 const RADIUS: f32 = 2.0;
@@ -77,60 +74,47 @@ fn map_point_screen_coords(point: Vec3) -> Option<Vec2> {
 pub struct Ring {
 	panel_item: PanelItem,
 	_model: Model,
-	_field: CylinderField,
+	_field: Field,
 	size_pixels: Vector2<u32>,
-	input_handler: HandlerWrapper<InputHandler, InputActionHandler<()>>,
-	hover_action: SingleActorAction<()>,
-	click_action: BaseInputAction<()>,
-	context_action: BaseInputAction<()>,
+	input: InputQueue,
+	hover_action: SimpleAction,
+	click_action: SimpleAction,
+	context_action: SimpleAction,
 	_keyboard: SimplePulseReceiver<KeyboardEvent>,
 	_lines: Lines,
 }
 impl Ring {
 	pub fn new(panel_item: PanelItem) -> Self {
 		let client = panel_item.node().client().unwrap();
-		let model = Model::create(
+		let _model = Model::create(
 			client.get_root(),
 			Transform::identity(),
 			&ResourceID::new_namespaced("kiara", "ring"),
 		)
 		.unwrap();
-		let ring = model.model_part("Ring").unwrap();
-		let field =
-			CylinderField::create(&model, Transform::identity(), RADIUS, HEIGHT_METERS).unwrap();
-		let input_handler = InputActionHandler::wrap(
-			InputHandler::create(&model, Transform::identity(), &field).unwrap(),
-			(),
+		let ring = _model.part("Ring").unwrap();
+		let field = Field::create(
+			&_model,
+			Transform::identity(),
+			Shape::Cylinder(CylinderShape {
+				length: HEIGHT_METERS,
+				radius: RADIUS,
+			}),
 		)
 		.unwrap();
-		let hover_action = SingleActorAction::new(
-			false,
-			|data, _: &()| match &data.input {
-				InputDataType::Pointer(p) => map_pointer_screen_coords(&p).is_some(),
-				InputDataType::Hand(h) => map_point_screen_coords(h.palm.position.into()).is_some(),
-				InputDataType::Tip(t) => map_point_screen_coords(t.origin.into()).is_some(),
-			},
-			true,
-		);
-		let click_action = BaseInputAction::new(false, |data, _: &()| match data.input {
-			InputDataType::Pointer(_) => data.datamap.with_data(|r| r.idx("select").as_f32() > 0.0),
-			_ => false,
-		});
-		let context_action = BaseInputAction::new(false, |data, _: &()| match data.input {
-			InputDataType::Pointer(_) => {
-				data.datamap.with_data(|r| r.idx("context").as_f32() > 0.0)
-			}
-			_ => false,
-		});
+		let input = InputHandler::create(&_model, Transform::identity(), &field)
+			.unwrap()
+			.queue()
+			.unwrap();
 
 		let panel_alias = panel_item.alias();
 		let keyboard = SimplePulseReceiver::create(
-			&model,
+			&_model,
 			Transform::identity(),
 			&field,
 			move |_, keyboard_event: KeyboardEvent| {
 				keyboard_event
-					.send_to_panel(&panel_alias, &SurfaceID::Toplevel)
+					.send_to_panel(&panel_alias, SurfaceId::Toplevel(()))
 					.unwrap();
 			},
 		)
@@ -142,60 +126,66 @@ impl Ring {
 		let size_pixels = [width_pixels as u32, HEIGHT_PIXELS].into();
 		panel_item.set_toplevel_size(size_pixels).unwrap();
 		panel_item
-			.apply_surface_material(&SurfaceID::Toplevel, &ring)
+			.apply_surface_material(SurfaceId::Toplevel(()), &ring)
 			.unwrap();
 
-		let circle = circle(128, 0.0, RADIUS + 0.01);
+		let circle = circle(128, 0.0, RADIUS + 0.01)
+			.thickness(0.01)
+			.transform(Mat4::from_rotation_x(FRAC_PI_2));
 		let lines = Lines::create(
-			&model,
+			&_model,
 			Transform::identity(),
 			&[
-				Line {
-					points: make_line_points(
-						circle
-							.iter()
-							.map(|p| [p.x, HEIGHT_METERS / 2.0, p.y].into())
-							.collect(),
-						0.01,
-						rgba_linear!(1.0, 1.0, 1.0, 1.0),
-					),
-					cyclic: true,
-				},
-				Line {
-					points: make_line_points(
-						circle
-							.iter()
-							.map(|p| [p.x, -HEIGHT_METERS / 2.0, p.y].into())
-							.collect(),
-						0.01,
-						rgba_linear!(1.0, 1.0, 1.0, 1.0),
-					),
-					cyclic: true,
-				},
+				circle.clone().transform(Mat4::from_translation(
+					[0.0, HEIGHT_METERS / 2.0, 0.0].into(),
+				)),
+				circle.transform(Mat4::from_translation(
+					[0.0, -HEIGHT_METERS / 2.0, 0.0].into(),
+				)),
 			],
 		)
 		.unwrap();
 		Ring {
 			panel_item,
-			_model: model,
+			_model,
 			_field: field,
 			size_pixels,
-			input_handler,
-			hover_action,
-			click_action,
-			context_action,
+			input,
+			hover_action: Default::default(),
+			click_action: Default::default(),
+			context_action: Default::default(),
 			_keyboard: keyboard,
 			_lines: lines,
 		}
 	}
 	pub fn update(&mut self) {
-		self.input_handler.lock_wrapped().update_actions([
-			self.hover_action.base_mut(),
-			&mut self.click_action,
-			&mut self.context_action,
-		]);
-		self.hover_action.update(None);
-		if let Some(hover_actor) = self.hover_action.actor() {
+		self.hover_action
+			.update(&self.input, &|data| match &data.input {
+				InputDataType::Pointer(p) => map_pointer_screen_coords(p).is_some(),
+				InputDataType::Hand(h) => map_point_screen_coords(h.palm.position.into()).is_some(),
+				InputDataType::Tip(t) => map_point_screen_coords(t.origin.into()).is_some(),
+			});
+		self.click_action
+			.update(&self.input, &|data| match data.input {
+				InputDataType::Pointer(_) => {
+					data.datamap.with_data(|r| r.idx("select").as_f32() > 0.0)
+				}
+				_ => false,
+			});
+		self.context_action
+			.update(&self.input, &|data| match data.input {
+				InputDataType::Pointer(_) => {
+					data.datamap.with_data(|r| r.idx("context").as_f32() > 0.0)
+				}
+				_ => false,
+			});
+
+		if let Some(hover_actor) = self
+			.hover_action
+			.currently_acting()
+			.difference(self.hover_action.started_acting())
+			.reduce(|a, b| if a.distance > b.distance { b } else { a })
+		{
 			if let Some(pointer_pos) = match &hover_actor.input {
 				InputDataType::Pointer(p) => map_pointer_screen_coords(p),
 				InputDataType::Hand(_) => None,
@@ -206,27 +196,39 @@ impl Ring {
 					pointer_pos.y * self.size_pixels.y as f32,
 				);
 				self.panel_item
-					.pointer_motion(&SurfaceID::Toplevel, pointer_pos)
+					.pointer_motion(SurfaceId::Toplevel(()), pointer_pos)
 					.unwrap();
-				if self.click_action.started_acting.contains(hover_actor) {
-					self.panel_item
-						.pointer_button(&SurfaceID::Toplevel, input_event_codes::BTN_LEFT!(), true)
-						.unwrap();
-				}
-				if self.click_action.stopped_acting.contains(hover_actor) {
-					self.panel_item
-						.pointer_button(&SurfaceID::Toplevel, input_event_codes::BTN_LEFT!(), false)
-						.unwrap();
-				}
-				if self.context_action.started_acting.contains(hover_actor) {
-					self.panel_item
-						.pointer_button(&SurfaceID::Toplevel, input_event_codes::BTN_RIGHT!(), true)
-						.unwrap();
-				}
-				if self.context_action.stopped_acting.contains(hover_actor) {
+				if self.click_action.started_acting().contains(hover_actor) {
 					self.panel_item
 						.pointer_button(
-							&SurfaceID::Toplevel,
+							SurfaceId::Toplevel(()),
+							input_event_codes::BTN_LEFT!(),
+							true,
+						)
+						.unwrap();
+				}
+				if self.click_action.stopped_acting().contains(hover_actor) {
+					self.panel_item
+						.pointer_button(
+							SurfaceId::Toplevel(()),
+							input_event_codes::BTN_LEFT!(),
+							false,
+						)
+						.unwrap();
+				}
+				if self.context_action.started_acting().contains(hover_actor) {
+					self.panel_item
+						.pointer_button(
+							SurfaceId::Toplevel(()),
+							input_event_codes::BTN_RIGHT!(),
+							true,
+						)
+						.unwrap();
+				}
+				if self.context_action.stopped_acting().contains(hover_actor) {
+					self.panel_item
+						.pointer_button(
+							SurfaceId::Toplevel(()),
 							input_event_codes::BTN_RIGHT!(),
 							false,
 						)
