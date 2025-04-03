@@ -8,6 +8,6 @@ Install niri from source or package manager
 Clone the kiara repository and `cargo build`
 
 ## Run
-Run the StardustXR server
+Run the StardustXR server  
 Run one of the input methods from [non-spatial-input](https://github.com/StardustXR/non-spatial-input) for keyboard/mouse use
 `cargo run`
